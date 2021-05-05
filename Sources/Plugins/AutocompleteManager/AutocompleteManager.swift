@@ -288,7 +288,9 @@ open class AutocompleteManager: NSObject, InputPlugin, UITextViewDelegate, UITab
             location: selectedLocation,
             length: 0
         )
-        
+
+        delegate?.autocompleteManager(self, didAutocomplete: session.prefix, with: session.completion)
+
         // End the session
         unregisterCurrentSession()
     }
@@ -451,6 +453,11 @@ open class AutocompleteManager: NSObject, InputPlugin, UITextViewDelegate, UITab
                     textView.attributedText = textView.attributedText.replacingCharacters(in: rangeFromDelimiter, with: nothing)
                     textView.selectedRange = NSRange(location: subrange.location + delimiterLocation, length: 0)
                 }
+
+                if let context = attributes[.autocompletedContext] as? [String: Any] {
+                    delegate?.autocompleteManager(self, didDeleteAutocompletedRangeWithContext: context)
+                }
+
                 unregisterCurrentSession()
                 return false
             }
@@ -477,6 +484,11 @@ open class AutocompleteManager: NSObject, InputPlugin, UITextViewDelegate, UITab
                     textView.selectedRange = NSRange(location: range.location + text.count, length: 0)
                     stop.pointee = true
                 }
+
+                if let context = attributes[.autocompletedContext] as? [String: Any] {
+                    delegate?.autocompleteManager(self, didDeleteAutocompletedRangeWithContext: context)
+                }
+
                 unregisterCurrentSession()
                 return false
             }
