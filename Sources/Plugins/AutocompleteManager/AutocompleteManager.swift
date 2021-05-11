@@ -135,6 +135,11 @@ open class AutocompleteManager: NSObject, InputPlugin, UITextViewDelegate, UITab
     
     /// The text attributes applied to highlighted substrings for each prefix
     public private(set) var autocompleteTextAttributes = [String: [NSAttributedString.Key: Any]]()
+
+    /// The custom delimiters used to terminate a session for each prefix.
+    /// When defined for a given prefix, these delimiters supersede the global
+    /// `autocompleteDelimiterSets` and cause them to be ignored.
+    public private(set) var autocompletePrefixDelimiterSets = [String: CharacterSet]()
     
     /// A reference to `defaultTextAttributes` that adds the NSAttributedAutocompleteKey
     private var typingTextAttributes: [NSAttributedString.Key: Any] {
@@ -168,23 +173,15 @@ open class AutocompleteManager: NSObject, InputPlugin, UITextViewDelegate, UITab
     /// Reloads the InputPlugin's session
     open func reloadData() {
 
-        var delimiterSet = autocompleteDelimiterSets.reduce(CharacterSet()) { result, set in
+        let delimiterSet = autocompleteDelimiterSets.reduce(CharacterSet()) { result, set in
             return result.union(set)
         }
-        let query = textView?.find(prefixes: autocompletePrefixes, with: delimiterSet)
-        
+        let query = textView?.find(prefixes: autocompletePrefixes,
+                                   delimiterSets: autocompletePrefixDelimiterSets,
+                                   globalDelimiterSet: delimiterSet,
+                                   maxSpaceCountAllowed: maxSpaceCountDuringCompletion)
         guard let result = query else {
-            if let session = currentSession, session.spaceCounter <= maxSpaceCountDuringCompletion {
-                delimiterSet = delimiterSet.subtracting(.whitespaces)
-                guard let result = textView?.find(prefixes: [session.prefix], with: delimiterSet) else {
-                    unregisterCurrentSession()
-                    return
-                }
-                let wordWithoutPrefix = (result.word as NSString).substring(from: result.prefix.utf16.count)
-                updateCurrentSession(to: wordWithoutPrefix)
-            } else {
-                unregisterCurrentSession()
-            }
+            unregisterCurrentSession()
             return
         }
         let wordWithoutPrefix = (result.word as NSString).substring(from: result.prefix.utf16.count)
@@ -226,10 +223,16 @@ open class AutocompleteManager: NSObject, InputPlugin, UITextViewDelegate, UITab
     /// - Parameters:
     ///   - prefix: The prefix such as: @, # or !
     ///   - attributedTextAttributes: The attributes to apply to the NSAttributedString
-    open func register(prefix: String, with attributedTextAttributes: [NSAttributedString.Key:Any]? = nil) {
+    ///
+    open func register(prefix: String, with attributedTextAttributes: [NSAttributedString.Key:Any]? = nil,
+                       delimiterSet: CharacterSet? = nil) {
         autocompletePrefixes.insert(prefix)
         autocompleteTextAttributes[prefix] = attributedTextAttributes
         autocompleteTextAttributes[prefix]?[.paragraphStyle] = paragraphStyle
+
+        if let delimiterSet = delimiterSet {
+            autocompletePrefixDelimiterSets[prefix] = delimiterSet
+        }
     }
     
     /// Unregisters a prefix and removes its associated cached attributes
@@ -238,16 +241,17 @@ open class AutocompleteManager: NSObject, InputPlugin, UITextViewDelegate, UITab
     open func unregister(prefix: String) {
         autocompletePrefixes.remove(prefix)
         autocompleteTextAttributes[prefix] = nil
+        autocompletePrefixDelimiterSets[prefix] = nil
     }
     
-    /// Registers a CharacterSet as a delimiter
+    /// Registers a CharacterSet as a global delimiter
     ///
     /// - Parameter delimiterSet: The `CharacterSet` to recognize as a delimiter
     open func register(delimiterSet set: CharacterSet) {
         autocompleteDelimiterSets.insert(set)
     }
     
-    /// Unregisters a CharacterSet
+    /// Unregisters a global CharacterSet
     ///
     /// - Parameter delimiterSet: The `CharacterSet` to recognize as a delimiter
     open func unregister(delimiterSet set: CharacterSet) {
@@ -284,7 +288,9 @@ open class AutocompleteManager: NSObject, InputPlugin, UITextViewDelegate, UITab
             location: selectedLocation,
             length: 0
         )
-        
+
+        delegate?.autocompleteManager(self, didAutocomplete: session.prefix, with: session.completion)
+
         // End the session
         unregisterCurrentSession()
     }
@@ -411,14 +417,6 @@ open class AutocompleteManager: NSObject, InputPlugin, UITextViewDelegate, UITab
         // Ensure that the text to be inserted is not using previous attributes
         preserveTypingAttributes()
         
-        if let session = currentSession {
-            let textToReplace = (textView.text as NSString).substring(with: range)
-            let deleteSpaceCount = textToReplace.filter { $0 == .space }.count
-            let insertSpaceCount = text.filter { $0 == .space }.count
-            let spaceCountDiff = insertSpaceCount - deleteSpaceCount
-            session.spaceCounter = spaceCountDiff
-        }
-        
         let totalRange = NSRange(location: 0, length: textView.attributedText.length)
         let selectedRange = textView.selectedRange
         
@@ -455,6 +453,11 @@ open class AutocompleteManager: NSObject, InputPlugin, UITextViewDelegate, UITab
                     textView.attributedText = textView.attributedText.replacingCharacters(in: rangeFromDelimiter, with: nothing)
                     textView.selectedRange = NSRange(location: subrange.location + delimiterLocation, length: 0)
                 }
+
+                if let context = attributes[.autocompletedContext] as? [String: Any] {
+                    delegate?.autocompleteManager(self, didDeleteAutocompletedRangeWithContext: context)
+                }
+
                 unregisterCurrentSession()
                 return false
             }
@@ -481,6 +484,11 @@ open class AutocompleteManager: NSObject, InputPlugin, UITextViewDelegate, UITab
                     textView.selectedRange = NSRange(location: range.location + text.count, length: 0)
                     stop.pointee = true
                 }
+
+                if let context = attributes[.autocompletedContext] as? [String: Any] {
+                    delegate?.autocompleteManager(self, didDeleteAutocompletedRangeWithContext: context)
+                }
+
                 unregisterCurrentSession()
                 return false
             }

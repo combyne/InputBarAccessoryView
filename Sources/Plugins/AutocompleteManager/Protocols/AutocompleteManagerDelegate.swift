@@ -63,6 +63,25 @@ public protocol AutocompleteManagerDelegate: AnyObject {
     ///   - text: The text to autocomplete with
     /// - Returns: If the prefix can be autocompleted. Default is TRUE
     func autocompleteManager(_ manager: AutocompleteManager, shouldComplete prefix: String, with text: String) -> Bool
+
+
+    /// Called after when a prefix was autocompleted
+    ///
+    /// - Parameters:
+    ///   - manager: The AutocompleteManager
+    ///   - prefix: The prefix character that is currently registered
+    ///   - autocompleteCompletion: The AutocompleteCompletion object provided by the data source
+    func autocompleteManager(_ manager: AutocompleteManager,
+                             didAutocomplete prefix: String,
+                             with autocompleteCompletion: AutocompleteCompletion?)
+
+    /// Called after a range of text containing a previous autocompletion has been deleted
+    ///
+    /// - Parameters:
+    ///   - manager: The AutocompleteManager
+    ///   - context: Context similar to AutocompleteCompletion.context
+    func autocompleteManager(_ manager: AutocompleteManager,
+                             didDeleteAutocompletedRangeWithContext context: [String: Any]?)
 }
 
 public extension AutocompleteManagerDelegate {
