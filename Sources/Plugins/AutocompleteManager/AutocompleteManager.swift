@@ -412,7 +412,7 @@ open class AutocompleteManager: NSObject, InputPlugin, UITextViewDelegate, UITab
         reloadData()
     }
     
-    public func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+    open func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
         
         // Ensure that the text to be inserted is not using previous attributes
         preserveTypingAttributes()
